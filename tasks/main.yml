@@ -54,7 +54,7 @@
       REGISTRY_HTTP_TLS_KEY: /certs/registry.key
     restart_policy: always
     
-- import_tasks: nettoyage_vieilles_images_disque.yml
+- include: nettoyage_vieilles_images_disque.yml
 
 - name: Load new images into the local store and push them into the registry
   command: "{{ docker_registry_img_load_dir }}/docker-load-img"
