@@ -30,7 +30,7 @@
     pathCAcsr: CA/webserver.csr
     pathCAkey: CA/private/webserver.key
 
-- stat: path=/etc/docker/certs.d/registry.crt
+- stat: path="{{ pathcrt }}"
   register: regenere_cert_registry
 
 - name: génération certificats

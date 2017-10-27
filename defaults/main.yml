@@ -3,3 +3,4 @@
 docker_registry_img_name: registry
 docker_registry_img_tag: 2
 docker_registry_img_load_dir: /etc/docker/images
+pathphpscript_cleanupsrcdocker: /tmp/docker_list_srccleanup.php

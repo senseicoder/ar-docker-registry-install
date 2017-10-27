@@ -1,8 +1,5 @@
 ---
 
-- set_fact:
-    pathphpscript_cleanupsrcdocker: /docker_list_srccleanup.php
-
 - name: déploiement script de nettoyage des images Docker dans le dossier
   template: src=docker_list_srccleanup.php.j2 dest="{{ pathphpscript_cleanupsrcdocker }}" owner=root group=root mode=0644
   changed_when: false
@@ -14,9 +11,9 @@
 
 - name: suppression des images
   shell: "cd {{ docker_registry_img_load_dir }} && rm {{ dockerimg2delete.stdout }}"
-  failed_when: false
   with_items: "{{ dockerimg2delete.stdout_lines }}"
   when: dockerimg2delete.stdout | trim != ''
+  failed_when: false
 
 - name: suppression script
   file: path="{{ pathphpscript_cleanupsrcdocker }}" state=absent
