@@ -36,23 +36,8 @@
 - stat: path=/etc/docker/certs.d/registry.crt
   register: regenere_cert_registry
 
-- name: génération csr and key for CA
-  command: "openssl req -new -nodes -newkey rsa:2048 -subj \"/C=FR/ST=France/L=Paris/O=IT/CN={{ hostname_registry }}\" -days 3650 -keyout {{ pathCAkey }} -out {{ pathCAcsr }} -config {{ pathCAconf }} -extensions v3_ca"
-  args: 
-    creates: "{{ pathcrt }}"
-  when: not regenere_cert_registry.stat.exists
-
-- file: path=CA/newcerts state=directory owner="root" group="root" mode="0755"
-
-- name: génération certificat CA
-  command: "openssl ca -batch -config {{ pathCAconf }} -policy policy_anything -out {{ pathcrt }} -infiles {{ pathCAcsr }}"
-  args: 
-    creates: "{{ pathcrt }}"
-  when: not regenere_cert_registry.stat.exists
-
-- name: copie clef CA
-  copy: >
-    src="{{ pathCAkey }}" dest="{{ pathkey }}" remote_src=true
+- name: génération certificats
+  include: generation_certificats.yml
   when: not regenere_cert_registry.stat.exists
 
 - name: Run the Docker Registry container
@@ -72,24 +57,7 @@
       REGISTRY_HTTP_TLS_KEY: /certs/registry.key
     restart_policy: always
     
-- set_fact:
-    pathphpscript_cleanupsrcdocker: /docker_list_srccleanup.php
-
-- name: déploiement script de nettoyage des images Docker dans le dossier
-  template: src=docker_list_srccleanup.php.j2 dest="{{ pathphpscript_cleanupsrcdocker }}" owner=root group=root mode=0644
-
-- name: collecte des images à supprimer
-  shell: "ls {{ docker_registry_img_load_dir }} | /usr/bin/php {{ pathphpscript_cleanupsrcdocker }}"
-  register: dockerimg2delete
-  changed_when: false
-
-- name: images docker à supprimer
-  debug: var=dockerimg2delete.stdout
-
-- name: suppression des images
-  shell: "cd {{ docker_registry_img_load_dir }} && rm {{ dockerimg2delete.stdout }}"
-  failed_when: false
-  when: dockerimg2delete.stdout | trim != ''
+- import_tasks: nettoyage_vieilles_images_disque.yml
 
 - name: Load new images into the local store and push them into the registry
   command: "{{ docker_registry_img_load_dir }}/docker-load-img"
