@@ -1,13 +1,10 @@
 ---
 
-- stat: path="{{ docker_registry_img_load_dir }}"
-  register: docker_registry_img_load_dir_stats
 - name: Create the auto-load images directory
   file:
     path={{ docker_registry_img_load_dir }}
     state=directory
     mode=0700
-  when: docker_registry_img_load_dir_stats.stat.exists == false
 
 - name: Install the Docker images auto-load script
   template:
