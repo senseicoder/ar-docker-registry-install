@@ -1,0 +1,42 @@
+<?php
+
+$aList = array();
+
+function is_version($s)
+{
+	$s = str_replace('.', '0', $s);
+	return is_numeric($s);
+}
+
+$stdin = fopen('php://stdin', 'r');
+while($sFilename = trim(fgets(STDIN))) {
+	$sFilename = trim($sFilename);
+	$s = basename($sFilename);
+	if(preg_match('/^(.+)_(.+).tgz$/', $s, $aMatch)) {
+		$sName = $aMatch[1];
+		$sVersion = $aMatch[2];
+
+		if(is_version($sVersion)) {
+			if( ! isset($aList[$sName])) $aList[$sName] = array('last'=>'0', 'del'=>array(), 'list'=>array());
+			if(is_version($sVersion)) $aList[$sName]['list'][$sVersion] = $sFilename;
+		}
+	}
+}
+
+foreach($aList as $sName => &$aRecM) {
+	$last = '0';
+	foreach($aRecM['list'] as $sVersion => $sFilename) {
+		if(version_compare($sVersion, $last) > 0) $last = $sVersion;
+	}
+
+	$aRecM['del'] = $aRecM['list'];
+	unset($aRecM['del'][$last]);
+}
+
+$aDel = array();
+foreach($aList as $sName => $aRec) {
+	foreach($aRec['del'] as $sVersion => $sFilename) {
+		$aDel[] = $sFilename;
+	}
+}
+if( ! empty($aDel)) echo implode(' ', $aDel);

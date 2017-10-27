@@ -1,0 +1,97 @@
+---
+
+- stat: path="{{ docker_registry_img_load_dir }}"
+  register: docker_registry_img_load_dir_stats
+- name: Create the auto-load images directory
+  file:
+    path={{ docker_registry_img_load_dir }}
+    state=directory
+    mode=0700
+  when: docker_registry_img_load_dir_stats.stat.exists == false
+
+- name: Install the Docker images auto-load script
+  template:
+    src=docker-load-img.j2
+    dest={{ docker_registry_img_load_dir }}/docker-load-img
+    mode=0755
+
+- name: Check if we already have a Docker registry image in the local store
+  shell: "docker images --format=\"{% raw %}{{.Repository}}:{{.Tag}}{% endraw %}\" | grep -q {{ docker_registry_img_name }}:{{ docker_registry_img_tag }}"
+  register: registry_image
+  failed_when: registry_image.rc not in [ 0, 1 ]
+  changed_when: registry_image.rc != 0
+
+# chicken&egg: we need to have the registry:2 image locally (not in the registry)
+- name: Load the Docker registry image into the local store
+  command: "docker load -i {{ docker_registry_img_load_dir }}/{{ docker_registry_img_name }}_{{ docker_registry_img_tag }}.tgz"
+  when: registry_image.rc != 0
+
+- set_fact:
+    pathcrt: /etc/docker/certs.d/registry.crt
+    pathkey: /etc/docker/certs.d/registry.key
+    pathCAconf: CA/ca-config
+    pathCAcsr: CA/webserver.csr
+    pathCAkey: CA/private/webserver.key
+
+- stat: path=/etc/docker/certs.d/registry.crt
+  register: regenere_cert_registry
+
+- name: génération csr and key for CA
+  command: "openssl req -new -nodes -newkey rsa:2048 -subj \"/C=FR/ST=France/L=Paris/O=IT/CN={{ hostname_registry }}\" -days 3650 -keyout {{ pathCAkey }} -out {{ pathCAcsr }} -config {{ pathCAconf }} -extensions v3_ca"
+  args: 
+    creates: "{{ pathcrt }}"
+  when: not regenere_cert_registry.stat.exists
+
+- file: path=CA/newcerts state=directory owner="root" group="root" mode="0755"
+
+- name: génération certificat CA
+  command: "openssl ca -batch -config {{ pathCAconf }} -policy policy_anything -out {{ pathcrt }} -infiles {{ pathCAcsr }}"
+  args: 
+    creates: "{{ pathcrt }}"
+  when: not regenere_cert_registry.stat.exists
+
+- name: copie clef CA
+  copy: >
+    src="{{ pathCAkey }}" dest="{{ pathkey }}" remote_src=true
+  when: not regenere_cert_registry.stat.exists
+
+- name: Run the Docker Registry container
+  docker:
+    name: registry
+    image: "{{ docker_registry_img_name }}:{{ docker_registry_img_tag }}"
+    state: reloaded
+    net: bridge
+    ports:
+      - 5000:5000
+    volumes:
+      - /var/lib/registry:/var/lib/registry
+      - /etc/docker/certs.d:/certs
+    env:
+      REGISTRY_STORAGE_DELETE_ENABLED: "True"
+      REGISTRY_HTTP_TLS_CERTIFICATE: /certs/registry.crt
+      REGISTRY_HTTP_TLS_KEY: /certs/registry.key
+    restart_policy: always
+    
+- set_fact:
+    pathphpscript_cleanupsrcdocker: /docker_list_srccleanup.php
+
+- name: déploiement script de nettoyage des images Docker dans le dossier
+  template: src=docker_list_srccleanup.php.j2 dest="{{ pathphpscript_cleanupsrcdocker }}" owner=root group=root mode=0644
+
+- name: collecte des images à supprimer
+  shell: "ls {{ docker_registry_img_load_dir }} | /usr/bin/php {{ pathphpscript_cleanupsrcdocker }}"
+  register: dockerimg2delete
+  changed_when: false
+
+- name: images docker à supprimer
+  debug: var=dockerimg2delete.stdout
+
+- name: suppression des images
+  shell: "cd {{ docker_registry_img_load_dir }} && rm {{ dockerimg2delete.stdout }}"
+  failed_when: false
+  when: dockerimg2delete.stdout | trim != ''
+
+- name: Load new images into the local store and push them into the registry
+  command: "{{ docker_registry_img_load_dir }}/docker-load-img"
+  register: load_img
+  changed_when: "'Importing' in load_img.stdout"

@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+#
+
+set -e 
+
+ABS=$(cd $(dirname "${BASH_SOURCE[0]}") && pwd)
+_IMG_INDIR=$(mktemp -p /tmp .docker-load-img_IMG_INDIR.XXXXXXXXXX) || exit 1
+_IMG_INREG=$(mktemp -p /tmp .docker-load-img_IMG_INREG.XXXXXXXXXX) || exit 1
+
+find $ABS/ -type f -name '*.tgz' -exec basename {} .tgz \; | sort >${_IMG_INDIR} || exit 1
+docker images --format="{% raw %}{{.Repository}}:{{.Tag}}{% endraw %}" | sed -e "s,{{ docker_registry_url }}/,,g" | sort | sed 's/:/_/' >${_IMG_INREG} || exit 1
+
+set +e
+_IMG_IMPORT=$(grep -Fxv -f ${_IMG_INREG} ${_IMG_INDIR})
+if [ $? -gt 1 ]; then echo "erreur lors du grep"; fi
+set -e
+
+for _IIMG in ${_IMG_IMPORT}; do
+        echo "Importing new image: ${_IIMG}"
+        docker load -i $ABS/${_IIMG}.tgz || exit 1
+done
+
+for _IIMG in $(cat $_IMG_INDIR); do 
+        _IIMG=${_IIMG/_/:}
+        _IIMG=${_IIMG/pentahodifull/pentahodi_full}
+        docker tag ${_IIMG} {{ docker_registry_url }}/${_IIMG} || exit 1
+        docker push {{ docker_registry_url }}/${_IIMG} || exit 1
+done 
+
+rm -f ${_IMG_INDIR} ${_IMG_INREG}
